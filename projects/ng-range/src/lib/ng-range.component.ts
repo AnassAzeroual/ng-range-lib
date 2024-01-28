@@ -1,81 +1,106 @@
-import { Component, ElementRef, ViewChild } from '@angular/core';
+import { Component, ElementRef, AfterViewInit, ViewChild } from '@angular/core';
 
 @Component({
   selector: 'lib-ng-range',
   template: `
-    <div>
-      <canvas #sliderCanvas
-              (mousedown)="onMouseDown($event)"
-              (touchstart)="onMouseDown($event)"
-              width="300"
-              height="30"></canvas>
+  <div class="current-value-indicator">{{ currentValue }}</div>
+    <div #canvasParent (mousedown)="onMouseDown($event)" (mousemove)="onMouseMove($event)" (mouseup)="onMouseUp($event)" (mouseleave)="onMouseLeave($event)">
+      <canvas #rulerCanvas></canvas>
     </div>
   `,
   styles: [
     `
-    div {
-      position: relative;
-      width: 100%;
-      height: 30px;
-      background-color: #eee;
-      border-radius: 5px;
-      overflow: hidden;
-    }
+      div {
+        position: relative;
+        width: auto;
+        height: 100px;
+        border-radius: 5px;
+        overflow: hidden;
+      }
 
-    canvas {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      cursor: pointer;
-    }
+      .current-value-indicator {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 14px;
+        color: #333;
+      }
+
+      canvas {
+        cursor: grab;
+      }
     `,
   ],
 })
-export class NgRangeComponent {
-  @ViewChild('sliderCanvas', { static: true }) sliderCanvas!: ElementRef<HTMLCanvasElement>;
+export class NgRangeComponent implements AfterViewInit {
+  currentValue = 0;
+  @ViewChild('rulerCanvas', { static: true }) rulerCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('canvasParent', { static: true }) canvasParent!: ElementRef<HTMLCanvasElement>;
 
   private context!: CanvasRenderingContext2D;
   private minValue = 0;
   private maxValue = 100;
-  private currentValue = 50;
+  private stepSize = 10;
+
+  private isDragging = false;
+  private dragStartX = 0;
 
   ngAfterViewInit(): void {
-    this.context = this.sliderCanvas.nativeElement.getContext('2d')!;
-    this.drawSlider();
+    this.context = this.rulerCanvas.nativeElement.getContext('2d')!;
+    this.drawRuler();
   }
 
-  drawSlider() {
+  drawRuler() {
+    this.rulerCanvas.nativeElement.width = this.maxValue * 3;
+    this.rulerCanvas.nativeElement.height = 50;
+
     // Clear the canvas
-    this.context.clearRect(0, 0, this.sliderCanvas.nativeElement.width, this.sliderCanvas.nativeElement.height);
+    this.context.clearRect(0, 0, this.rulerCanvas.nativeElement.width, this.rulerCanvas.nativeElement.height);
 
-    // Draw the slider track
-    this.context.fillStyle = '#ddd';
-    this.context.fillRect(0, 0, this.sliderCanvas.nativeElement.width, this.sliderCanvas.nativeElement.height);
+    // Draw ruler ticks and labels
+    const numTicks = (this.maxValue - this.minValue) / this.stepSize;
+    const tickSpacing = this.rulerCanvas.nativeElement.width / numTicks;
 
-    // Draw the roller at the current value
-    const rollerPosition = (this.currentValue - this.minValue) / (this.maxValue - this.minValue) * this.sliderCanvas.nativeElement.width;
-    this.context.fillStyle = '#3498db';
-    this.context.beginPath();
-    this.context.arc(rollerPosition, this.sliderCanvas.nativeElement.height / 2, 10, 0, 2 * Math.PI);
-    this.context.fill();
+    this.context.fillStyle = '#333';
+    this.context.font = '12px Arial';
+
+    for (let i = 0; i <= numTicks; i++) {
+      const tickX = i * tickSpacing;
+      this.context.fillRect(tickX, 10, 2, 15);
+
+      const label = this.minValue + i * this.stepSize;
+      this.context.fillText(label.toString(), tickX - 10, 40);
+    }
   }
 
   onMouseDown(event: MouseEvent) {
-    this.handleSliderMove(event);
-    document.addEventListener('mousemove', this.handleSliderMove.bind(this));
-    document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+    this.isDragging = true;
+    this.dragStartX = event.clientX;
+    this.canvasParent.nativeElement.style.cursor = 'grabbing';
   }
 
-  handleSliderMove(event: MouseEvent) {
-    const rect = this.sliderCanvas.nativeElement.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const newValue = (mouseX / this.sliderCanvas.nativeElement.width) * (this.maxValue - this.minValue) + this.minValue;
-    this.currentValue = Math.max(this.minValue, Math.min(this.maxValue, newValue));
-    this.drawSlider();
+  onMouseMove(event: MouseEvent) {
+    if (this.isDragging) {
+      const offsetX = this.dragStartX - event.clientX;
+      this.canvasParent.nativeElement.scrollLeft += offsetX;
+
+      // Calculate and update the current value based on the scroll position
+      const totalWidth = this.rulerCanvas.nativeElement.width - this.canvasParent.nativeElement.clientWidth;
+      const scrollPercentage = (this.canvasParent.nativeElement.scrollLeft / totalWidth) || 0;
+      this.currentValue = Math.round(this.minValue + scrollPercentage * (this.maxValue - this.minValue));
+
+      this.dragStartX = event.clientX;
+    }
   }
 
-  handleMouseUp() {
-    document.removeEventListener('mousemove', this.handleSliderMove.bind(this));
-    document.removeEventListener('mouseup', this.handleMouseUp.bind(this));
+  onMouseUp(event: MouseEvent) {
+    this.isDragging = false;
+    this.canvasParent.nativeElement.style.cursor = 'grab';
+  }
+
+  onMouseLeave(event: MouseEvent) {
+    this.isDragging = false;
+    this.canvasParent.nativeElement.style.cursor = 'auto';
   }
 }
